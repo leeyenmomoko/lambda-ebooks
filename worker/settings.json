@@ -1,0 +1,24 @@
+{
+  "ck101": {
+    "main_selector":"div.t_fsz",
+    "first_page_selector":"div.pgs div.pg strong",
+    "pages_container":"div.pgs div.pg a",
+    "main_content_container":"td.t_f",
+    "removeTags":{
+      "font":"removeTag",
+      "strong":"removeTag",
+      "img":"",
+      "a":"",
+      "i.pstatus":"",
+      "i":"",
+      "div.t_attach":"",
+      "span":"",
+      "br":"cleanDuplicate",
+      "ignore_js_op":"",
+      "script":"",
+      "noscript":""
+    },
+    "link":"http://ck101.com/thread-[serial]-[page]-1.html",
+    "title_spliter" : ["章", "節"]
+  }
+}

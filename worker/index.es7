@@ -1,0 +1,286 @@
+require("babel-polyfill");
+
+const querystring = require('querystring');
+let request = require("request");
+let cheerio = require('cheerio');
+let Epub = require("epub-gen");
+let fs = require("fs");
+let settings = require('./settings.json');
+let outputPath = '/tmp/';
+let tempDir = '/tmp/';
+
+let AWS = require('aws-sdk');
+let s3 = new AWS.S3({apiVersion: '2006-03-01'});
+
+// http://ck101.com/thread-1321314-1-1.html
+//console.log(settings);
+
+let chkTitle = (str) => {
+  let titleRegex = /.*第[1234567890零一二兩三四五六七八九十百佰千萬億兆京垓]*章.*/g;
+  if(str.match(titleRegex)){
+    return true;
+  }
+  return false;
+};
+
+let getPages = (serial, source) => {
+  let promise = new Promise((resolve, reject) => {
+    let url = settings[source].link.replace('[serial]', serial).replace('[page]', 1);
+    let req = request(url, (error, response, body) => {
+      if (!error && response.statusCode == 200) {
+        let $ = cheerio.load(body);
+        let pages = [];
+        $(settings[source].pages_container).each((i, elem) => {
+          let pageString = $(elem).text().replace('...', '').trim();
+          if( /^\d*$/g.test(pageString)){
+            pages.push(pageString);
+          }
+        });
+        resolve(Math.max(...pages));
+      }
+    });
+  });
+  return promise;
+};
+
+let getContent = (serial, source, page) => {
+  let promise = new Promise((resolve, reject) => {
+    let url = settings[source].link.replace('[serial]', serial).replace('[page]', page);
+    let req = request(url, (error, response, body) => {
+      if (!error && response.statusCode == 200) {
+        let outputContents = [];
+        let $ = cheerio.load(body, {
+          normalizeWhitespace: true
+        });
+
+        // remove Tags
+        for(let tag in settings[source].removeTags){
+          if($(tag).length > 0) {
+            $(tag).each((i, elem) => {
+              switch(settings[source].removeTags[tag]){
+                case 'null':
+                  $(elem).replaceWith('');
+                  break;
+                case 'removeTag':
+                  $(elem).replaceWith($(elem).text());
+                  break;
+                case "cleanDuplicate":
+                  if(typeof $(elem).next()[0] !== 'undefined' && $(elem).next()[0].name === 'br'){
+                    $(elem).remove();
+                  }
+                  break;
+                default:
+                  $(elem).replaceWith(settings[source].removeTags[tag]);
+              }
+            });
+          }
+        }
+
+        // parse title & content
+        $(settings[source].main_content_container).each((i, elem) => {
+          let article = {
+            title: '',
+            content: '',
+          };
+
+          let originalContents = $(elem).contents();//.replace('...', '').trim();
+          originalContents.each((i, line) => {
+            let content = $(line).text().trim().replace(' ', '').replace(' ', '');
+            if( content !== ''){
+              // check title or content
+              if(chkTitle(content) && article.title === ''){
+                let last;
+                for(let titleSpliter in settings[source].title_spliter){
+                  let find = content.indexOf(settings[source].title_spliter[titleSpliter]);
+                  if(find !== -1){
+                    article.title = content.substr(find+1);
+                  }
+                }
+              }
+              else{
+                article.content += "<p>" + content + "</p>\n";
+              }
+            }
+          });
+
+          if(article.content.trim() !== ''){
+            outputContents.push(article);
+          }
+        });
+        console.log('page ' + page + ' completed.');
+        resolve(outputContents);
+      }
+      else{
+        reject(error);
+      }
+    });
+
+  });
+
+  return promise;
+};
+
+
+let loadSource = async (serial, source, method) => {
+  console.log('starting load page');
+  let allContents = [];
+  let lastPage = await getPages(serial, source);
+  let allPormises = [];
+  for(let page = 1; page<=lastPage; page++){
+    console.log('start page ' + page);
+    let pageContents;
+    if( method === 'await'){
+      pageContents = await getContent(serial, source, page);
+      allContents[page-1] = pageContents;
+    }
+    else if( method === 'promise'){
+      pageContents = getContent(serial, source, page);
+      allPormises[page-1] = pageContents;
+    }
+  }
+  if( method === 'await'){
+    return allContents;
+  }
+  else if( method === 'promise'){
+    return new Promise((resolve, reject) => {
+      Promise.all(allPormises).then((datas) => {
+        //allContents = datas;
+        resolve(datas);
+      });
+    });
+  }
+};
+
+let makeBook = async (serial, source, title, author, method, done) => {
+  console.log('start makeBook');
+  let datas = await loadSource(serial, source, method);
+
+  //console.log(datas);
+  var option = {
+    title: title, // *Required, title of the book.
+    author: author, // *Required, name of the author.
+    publisher: "Sample Publisher", // optional
+    cover: "", // Url or File path, both ok.
+    content: [],
+    tempDir: tempDir
+  };
+
+  let chapter = 0;
+  for(let page in datas){
+    for(let articleIndex in datas[page]){
+      option.content.push({
+        "title": datas[page][articleIndex].title,
+        "data": datas[page][articleIndex].content
+      });
+    }
+  }
+
+  //let epub = new Epub(option, );
+  new Epub(option, outputPath + title +".epub").promise.then(function(){
+    console.log("Ebook Generated Successfully!");
+
+    let stream = fs.createReadStream(outputPath + title + ".epub");
+    let params = {
+      Bucket: 'leeyen-ebooks', /* required */
+      Body: stream, /* required */
+      Key: 'epubs/' + author + '/' + title + ".epub", /* required */
+      ACL: 'public-read',
+      Tagging: querystring.stringify({author: author, name:title})
+    };
+
+    s3.upload(params, function(err, data) {
+      if (err){
+        console.log(err, err.stack); // an error occurred
+      }
+      else{
+        console.log(data);           // successful response
+        console.log('actually done!');
+        //done(null, { url: data.Location });
+
+        const res = {
+          "statusCode": 200,
+          "headers": {},
+          "body": JSON.stringify({ url: data.Location })    // body must be returned as a string
+        };
+
+        done.succeed(res);
+        //done(null, { url: data.Location });
+      }
+    });
+
+  }, function(err){
+    console.error("Failed to generate Ebook because of ", err)
+  });
+  //console.timeEnd('Some_Name_Here');
+};
+
+console.log('Loading function');
+
+/**
+ * Demonstrates a simple HTTP endpoint using API Gateway. You have full
+ * access to the request and response payload, including headers and
+ * status code.
+ *
+ * To scan a DynamoDB table, make a GET request with the TableName as a
+ * query string parameter. To put, update, or delete an item, make a POST,
+ * PUT, or DELETE request respectively, passing in the payload to the
+ * DynamoDB API as a JSON body.
+ */
+exports.handler = (event, context, callback) => {
+    //console.log('Received event:', JSON.stringify(event, null, 2));
+
+    const done = (err, res) => callback(null, {
+        statusCode: err ? '400' : '200',
+        body: err ? err.message : JSON.stringify(res),
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    });
+
+    switch (event.httpMethod) {
+      case 'DELETE':
+        break;
+      case 'GET':
+        var data = {
+           results: [1,2,3],
+           success: true
+        };
+        event.tyoe = typeof event.body;
+        data = event;
+
+        // here's the object we need to return
+        const res = {
+            "statusCode": 200,
+            "headers": {},
+            "body": JSON.stringify(data)    // body must be returned as a string
+        };
+
+        context.succeed(res); // we must use this callback to return to amazon api gateway
+        break;
+      case 'POST':
+
+        console.log(event);
+        event.body = typeof event.body === 'object' ? event.body : JSON.parse(event.body);
+        makeBook(event.body.serial, event.body.source, event.body.title, event.body.author, 'promise', context);
+        break;
+      case 'PUT':
+        dynamo.updateItem(JSON.parse(event.body), done);
+        break;
+      default:
+        done(new Error(`Unsupported method "${event.httpMethod}"`));
+    }
+};
+if(process.argv.length >= 3 && process.argv[2] === 'local'){
+  let event = {
+    "httpMethod": "POST",
+    "body": {
+      "serial": "3728942",
+      "source": "ck101",
+      "title": "未來天王",
+      "author": "陳詞懶調"
+    }
+  };
+  outputPath = 'output/';
+  tempDir = 'output/';
+  exports.handler(event, '', '');
+}

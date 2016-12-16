@@ -1,0 +1,4 @@
+.DS_Store
+worker/output/*
+worker/src/*
+*/node_modules

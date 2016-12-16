@@ -1,0 +1,8 @@
+{
+  "name": "ebookAPI",
+  "version": "1.0.0",
+  "description": "E-books apis",
+  "main": "index.js",
+  "author": "Lee Yen",
+  "license": "MIT"
+}
