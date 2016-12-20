@@ -6,7 +6,6 @@ console.log('main');
 
 AWS.config.update({
   region: 'ap-northeast-1',
-  credentials: {accessKeyId: 'AKIAIBRC5FGJYSPIRVHA', secretAccessKey: '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'}
 });
 
 var s3 = new AWS.S3({
