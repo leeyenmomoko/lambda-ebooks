@@ -6,7 +6,6 @@
   "author": "Lee Yen",
   "license": "MIT",
   "dependencies": {
-    "aws-sdk": "^2.7.16",
-    "dynamodb-doc": "^1.0.0"
+    "aws-sdk": "^2.7.16"
   }
 }

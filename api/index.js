@@ -18,15 +18,117 @@ const ebookTable = 'ebooks';
 exports.handler = (event, context, callback) => {
   //let dynamo = new doc.DynamoDB();
   let dynamodb = new AWS.DynamoDB.DocumentClient();
-  //console.log('Received event:', JSON.stringify(event, null, 2));
+  console.log('Received event:', JSON.stringify(event, null, 2));
 
   let params = {
     TableName: 'ebooks'
   };
   let validFields = {
     "url": 'required',
-    "title": 'required',
-    "author": 'required'
+    "title": '',
+    "author": ''
+  };
+
+  let operation = (inputs, done) => {
+    switch (event.httpMethod) {
+      case 'DELETE':
+        dynamodb.delete({
+          TableName: ebookTable,
+          Key: {
+            source: inputs.source,
+            id: inputs.id
+          }
+        }, (err, data) => {
+          if (err) {
+            console.log(err, err.stack);
+          }
+          else{
+            console.log(data);
+            done(null, { message: inputs.source + '-' + inputs.id + ' deleted'});
+          }
+        });
+        break;
+      case 'GET':
+        dynamodb.get({
+          TableName: ebookTable,
+          Key: {
+            source: inputs.source,
+            id: inputs.id,
+          }
+        }, (err, data) => {
+          if (err) {
+            console.log(err, err.stack);
+          }
+          else{
+            console.log(data);
+            done(null, data);
+          }
+        });
+        break;
+      case 'POST':
+        dynamodb.put({
+          TableName: ebookTable,
+          Item: {
+            source: inputs.source,
+            id: inputs.id,
+            chapter: 0,
+            title: inputs.title,
+            author: inputs.author,
+            status: 'waiting',
+            createdAt: new Date().getTime(),
+            lastModified: new Date().getTime()
+          }
+        }, (err, data) => {
+          if (err) {
+            console.log(err, err.stack);
+          }
+          else{
+            console.log(data);
+            done(null, { message: inputs.source + '-' + inputs.id + ' added' });
+          }
+        });
+        break;
+      case 'PUT':
+        let params = {
+          TableName: ebookTable,
+          Key: {
+            source: inputs.source,
+            id: inputs.id
+          },
+          AttributeUpdates: {
+            status: {
+              Value: 'waiting'
+            },
+            lastModified: {
+              Value: new Date().getTime()
+            }
+          }
+        };
+        if(typeof inputs.author === 'string'){
+          params.AttributeUpdates.author = {
+            Value: inputs.author
+          };
+        }
+        if(typeof inputs.title === 'string'){
+          params.AttributeUpdates.title = {
+            Value: inputs.title
+          };
+        }
+
+        dynamodb.update(params, (err, data) => {
+          if (err) {
+            console.log(err, err.stack);
+          }
+          else{
+            console.log(data);
+            done(null, { message: inputs.source + '-' + inputs.id + ' updated' });
+          }
+        });
+        //dynamodb.updateItem(JSON.parse(event.body), done);
+        break;
+      default:
+        done(new Error(`Unsupported method "${event.httpMethod}"`));
+    }
   };
 
   const done = (err, res) => callback(null, {
@@ -41,16 +143,34 @@ exports.handler = (event, context, callback) => {
   let regexResult = null;
   let validRequest = true;
   let urlFields = null;
-  if(event.body){
+  let inputs = {};
+
+  event.body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+  if(event.body && typeof event.body === 'object'){
+    console.log('body exist ');
     for(let field in validFields){
-      if(validRequest && validFields[field] === 'required' && typeof event.body[field] === 'undefined'){
-        validRequest = false;
+      if(validRequest && typeof validFields[field] === 'string'){
+        switch(validFields[field]){
+          case 'required':
+            if(typeof event.body[field] === 'undefined'){
+              console.log('require field:' + field + ' not found');
+              validRequest = false;
+            }
+            break;
+        }
+        if(validRequest){
+          inputs[field] = event.body[field];
+        }
       }
     }
     if(validRequest){
       urlFields = event.body.url.match(regex);
       if(urlFields.length !== 4){
         validRequest = false
+      }
+      else{
+        inputs['source'] = urlFields[1];
+        inputs['id'] = parseInt(urlFields[2], 10);
       }
     }
   }
@@ -59,10 +179,11 @@ exports.handler = (event, context, callback) => {
   }
 
   if(validRequest){
+    console.log('read source config');
     var sourceParams = {
       TableName: sourceTable,
       Key:{
-        "source": urlFields[1]
+        "source": inputs.source
       }
     };
     dynamodb.get(sourceParams, function(err, data) {
@@ -71,91 +192,10 @@ exports.handler = (event, context, callback) => {
       }
       else{
         console.log("GetItem succeeded:", JSON.stringify(data, null, 2));
+        operation(inputs, done);
       }
     });
-    switch (event.httpMethod) {
-      case 'DELETE':
-        dynamodb.delete({
-          TableName: ebookTable,
-          Key: {
-            source: urlFields[1],
-            id: parseInt(urlFields[2], 10)
-          }
-        }, (err, data) => {
-          if (err) {
-            console.log(err, err.stack);
-          }
-          else{
-            console.log(data);
-          }
-        });
-        break;
-      case 'GET':
-        dynamodb.get({
-          TableName: ebookTable,
-          Key: {
-            source: urlFields[1],
-            id: parseInt(urlFields[2], 10),
-          }
-        }, (err, data) => {
-          if (err) {
-            console.log(err, err.stack);
-          }
-          else{
-            console.log(data);
-          }
-        });
-        break;
-      case 'POST':
-        dynamodb.put({
-          TableName: ebookTable,
-          Item: {
-            source: urlFields[1],
-            id: parseInt(urlFields[2], 10),
-            chapter: 0,
-            title: event.body.title,
-            author: event.body.author,
-            status: 'waiting',
-            createdAt: new Date().getTime(),
-            lastModified: new Date().getTime()
-          }
-        }, (err, data) => {
-          if (err) {
-            console.log(err, err.stack);
-          }
-          else{
-            console.log(data);
-          }
-        });
-        break;
-      case 'PUT':
-        dynamodb.update({
-          TableName: ebookTable,
-          Key: {
-            source: urlFields[1],
-            id: parseInt(urlFields[2], 10)
-          },
-          AttributeUpdates: {
-            status: {
-              Value: 'waiting'
-            },
-            lastModified: {
-              Value: new Date().getTime()
-            }
-          }
-        }, (err, data) => {
-          if (err) {
-            console.log(err, err.stack);
-          }
-          else{
-            console.log(data);
-          }
-        });
-        //dynamodb.updateItem(JSON.parse(event.body), done);
-        break;
-      default:
-        done(new Error(`Unsupported method "${event.httpMethod}"`));
-    }
+
   }
   else{
     done('invalid inputs', '');
