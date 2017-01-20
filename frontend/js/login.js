@@ -1,24 +1,3 @@
-console.log('main');
-
-const List = { template: require('views/list.vue') }
-const Login = { template: 'views/login.html' }
-
-const routes = [
-  { path: '/', component: List },
-  { path: '/login', component: Login }
-]
-
-const router = new VueRouter({
-  routes
-})
-
-const app = new Vue({
-  router,
-  data: {
-    message: 'Hello world!'
-  }
-}).$mount('#app')
-
 // Initialize the Amazon Cognito credentials provider
 AWS.config.region = 'ap-northeast-1'; // Region
 

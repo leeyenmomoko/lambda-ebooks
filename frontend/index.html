@@ -10,7 +10,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/5.0.0/normalize.min.css.map">
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.5/css/bootstrap.min.css" integrity="sha384-AysaV+vQoT3kOAXZkl02PThvDr8HYKPZhNT5h/CXfBThSRXQ6jW5DO2ekP5ViFdi" crossorigin="anonymous">
-    <link rel="stylesheet" href="css/cover.css">
+    <link rel="stylesheet" href="/css/cover.css">
+    <link rel="stylesheet" href="/css/modal.css">
   </head>
   <body>
     <div id="app" class="site-wrapper">
@@ -20,12 +21,7 @@
           <div class="masthead clearfix">
             <div class="inner">
               <h3 class="masthead-brand">EPUB Maker</h3>
-              <nav class="nav nav-masthead">
-                <router-link class="nav-link" active-class="active" to="/" exact>EPUB List</router-link>
-                <router-link class="nav-link" active-class="active" to="/add">Add new EPUB</router-link>
-                <router-link class="nav-link" active-class="active" to="/contact">Contact Me</router-link>
-                <router-link class="nav-link" active-class="active" to="/login">Login</router-link>
-              </nav>
+              <app-nav></app-nav>
             </div>
           </div>
           <router-view>
@@ -74,8 +70,38 @@
     <script src="js/libs/aws/aws-cognito-sdk.min.js"></script>
     <script src="js/libs/aws/amazon-cognito-identity.min.js"></script>
     <script src="js/libs/aws/aws-sdk-2.7.14.min.js"></script>
-    <script src="https://unpkg.com/vue/dist/vue.js"></script>
-    <script src="https://unpkg.com/vue-router/dist/vue-router.js"></script>
-    <script src="js/main.js"></script>
+    <script src="/dist/build.js"></script>
+    <!-- template for the modal component -->
+    <script type="text/x-template" id="modal-template">
+      <transition name="modal">
+        <div class="modal-mask">
+          <div class="modal-wrapper">
+            <div class="modal-container">
+
+              <div class="modal-header">
+                <slot name="header">
+                  default header
+                </slot>
+              </div>
+
+              <div class="modal-body">
+                <slot name="body">
+                  default body
+                </slot>
+              </div>
+
+              <div class="modal-footer">
+                <slot name="footer">
+                  default footer
+                  <button class="modal-default-button" @click="$emit('close')">
+                    OK
+                  </button>
+                </slot>
+              </div>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </script>
   </body>
 </html>
